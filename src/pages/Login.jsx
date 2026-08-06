@@ -36,48 +36,49 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-8 bg-white">
-      <h1 className="text-2xl font-bold text-brand-dark mb-1">Đăng nhập</h1>
-      <p className="text-gray-500 text-sm mb-6">Chào mừng quay lại SmartSpend 👋</p>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md rounded-[32px] bg-white p-8 shadow-lg">
+        <h1 className="text-3xl font-bold text-brand-dark mb-2">Đăng nhập</h1>
+        <p className="text-gray-500 text-sm mb-8">Chào mừng quay lại SmartSpend 👋</p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="text-sm text-gray-600">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="ban@gmail.com"
-            className="w-full mt-1 px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
-          />
-        </div>
-        <div>
-          <label className="text-sm text-gray-600">Mật khẩu</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="w-full mt-1 px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="text-sm text-gray-600">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ban@gmail.com"
+              className="w-full mt-1 px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Mật khẩu</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full mt-1 px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
+            />
+          </div>
 
-        {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        <button
-          type="submit"
-          className="w-full bg-brand text-white py-2.5 rounded-xl font-medium hover:bg-brand-dark transition"
-        >
-          Đăng nhập
-        </button>
-      </form>
+          <button
+            type="submit"
+            className="w-full bg-brand text-white py-2.5 rounded-xl font-medium hover:bg-brand-dark transition"
+          >
+            Đăng nhập
+          </button>
+        </form>
 
-      <p className="text-center text-sm text-gray-500 mt-6">
-        Chưa có tài khoản?{" "}
-        <Link to="/register" className="text-brand font-medium">
-          Đăng ký ngay
-        </Link>
-      </p>
+        <p className="text-center text-sm text-gray-500 mt-6">
+          Chưa có tài khoản? <Link to="/register" className="text-brand font-medium">
+            Đăng ký ngay
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

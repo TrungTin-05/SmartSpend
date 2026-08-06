@@ -9,7 +9,7 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 export default function App() {
   return (
-    <div className="phone-frame">
+    <div className="min-h-screen bg-gray-50">
       <Routes>
         <Route path="/" element={<Splash />} />
         <Route path="/login" element={<Login />} />
