@@ -25,8 +25,15 @@ async function request(path, options = {}) {
   const data = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem("smartspend-demo-user");
+    }
     const error = data?.message || response.statusText || "Lỗi khi gọi API";
-    throw new Error(error);
+    const authError = response.status === 401
+      ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+      : error;
+    throw new Error(authError);
   }
 
   return data;

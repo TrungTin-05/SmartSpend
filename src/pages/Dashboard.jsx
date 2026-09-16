@@ -1,7 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "../components/BottomNav.jsx";
-import { addTransaction, getCurrentUser, logout } from "../services/auth.js";
+import {
+  addTransaction,
+  deleteTransaction,
+  getCategories,
+  getCurrentUser,
+  logout,
+  updateTransaction,
+} from "../services/auth.js";
 
 function formatVND(n) {
   return n.toLocaleString("vi-VN") + " đ";
@@ -20,7 +27,7 @@ function formatDateRange(startDate, endDate) {
   return `${formatDate(startDate)} — ${formatDate(endDate)}`;
 }
 
-const categories = ["Lương", "Ăn uống", "Di chuyển", "Giải trí", "Khác"];
+const defaultExpenseCategories = ["Ăn uống", "Di chuyển", "Giải trí", "Khác"];
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -30,10 +37,17 @@ export default function Dashboard() {
       ? { ...currentUser, transactions: currentUser.transactions || [] }
       : null;
   });
+  const [expenseCategories, setExpenseCategories] = useState(
+    defaultExpenseCategories.map((name) => ({ id: name, name }))
+  );
+  const [incomeCategories, setIncomeCategories] = useState([{ id: "salary", name: "Lương" }]);
   const [error, setError] = useState("");
+  const [editingTransactionId, setEditingTransactionId] = useState(null);
+  const [pendingDeleteTransaction, setPendingDeleteTransaction] = useState(null);
+  const [savingTransaction, setSavingTransaction] = useState(false);
   const [form, setForm] = useState({
     name: "",
-    category: categories[0],
+    category: defaultExpenseCategories[0],
     amount: "",
     type: "expense",
     date: new Date().toISOString().slice(0, 10),
@@ -55,9 +69,27 @@ export default function Dashboard() {
     }
   }, [user, navigate]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    Promise.all([getCategories("expense"), getCategories("income")]).then(([expenseResult, incomeResult]) => {
+      if (!expenseResult.error && expenseResult.categories.length > 0) {
+        setExpenseCategories(expenseResult.categories);
+      }
+      if (!incomeResult.error && incomeResult.categories.length > 0) {
+        setIncomeCategories(incomeResult.categories);
+      }
+    });
+  }, [user?.id]);
+
   if (!user) {
     return null;
   }
+
+  const categoryOptions = form.type === "expense" ? expenseCategories : incomeCategories;
+  const displayedCategoryOptions = categoryOptions.some((category) => category.name === form.category)
+    ? categoryOptions
+    : [{ id: form.category, name: form.category }, ...categoryOptions];
 
   const balance = useMemo(
     () => (user.transactions || []).reduce((sum, t) => sum + (t.amount || 0), 0),
@@ -398,11 +430,34 @@ export default function Dashboard() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  async function handleAddTransaction(e) {
+  function resetTransactionForm() {
+    setEditingTransactionId(null);
+    setForm({
+      name: "",
+      category: defaultExpenseCategories[0],
+      amount: "",
+      type: "expense",
+      date: new Date().toISOString().slice(0, 10),
+    });
+  }
+
+  function startEditingTransaction(transaction) {
+    setEditingTransactionId(transaction.id);
+    setForm({
+      name: transaction.name,
+      category: transaction.category,
+      amount: Math.abs(transaction.amount),
+      type: transaction.type,
+      date: transaction.date,
+    });
+    setError("");
+  }
+
+  async function handleSaveTransaction(e) {
     e.preventDefault();
     const amount = Number(form.amount);
-    if (!form.name || !form.category || !amount || !form.date) {
-      setError("Vui lòng điền tên, số tiền và ngày giao dịch.");
+    if (!form.name.trim() || !form.category || !Number.isFinite(amount) || amount <= 0 || !form.date) {
+      setError("Vui lòng nhập tên, danh mục, số tiền lớn hơn 0 và ngày giao dịch.");
       return;
     }
 
@@ -415,21 +470,52 @@ export default function Dashboard() {
       date: form.date,
     };
 
-    const result = await addTransaction(transaction);
+    setSavingTransaction(true);
+    const result = editingTransactionId
+      ? await updateTransaction(editingTransactionId, transaction)
+      : await addTransaction(transaction);
+    setSavingTransaction(false);
     if (result.error) {
+      if (!getCurrentUser()) {
+        setUser(null);
+        return;
+      }
       setError(result.error);
       return;
     }
 
     setUser(result.user);
     setError("");
-    setForm({
-      name: "",
-      category: categories[0],
-      amount: "",
-      type: "expense",
-      date: new Date().toISOString().slice(0, 10),
-    });
+    resetTransactionForm();
+  }
+
+  async function handleDeleteTransaction(transaction) {
+    setPendingDeleteTransaction(transaction);
+  }
+
+  async function confirmDeleteTransaction() {
+    if (!pendingDeleteTransaction) {
+      return;
+    }
+
+    setSavingTransaction(true);
+    const result = await deleteTransaction(pendingDeleteTransaction.id);
+    setSavingTransaction(false);
+    setPendingDeleteTransaction(null);
+    if (result.error) {
+      if (!getCurrentUser()) {
+        setUser(null);
+        return;
+      }
+      setError(result.error);
+      return;
+    }
+
+    setUser(result.user);
+    setError("");
+    if (editingTransactionId === pendingDeleteTransaction.id) {
+      resetTransactionForm();
+    }
   }
 
   return (
@@ -468,11 +554,22 @@ export default function Dashboard() {
             <section className="rounded-[32px] bg-white p-8 shadow-sm">
               <div className="mb-6 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900">Thêm giao dịch mới</h2>
+                  <h2 className="text-xl font-semibold text-slate-900">
+                    {editingTransactionId ? "Chỉnh sửa giao dịch" : "Thêm giao dịch mới"}
+                  </h2>
                   <p className="text-sm text-slate-500">Ghi chú thu nhập hoặc chi tiêu ngay trong dashboard.</p>
                 </div>
+                {editingTransactionId && (
+                  <button
+                    type="button"
+                    onClick={resetTransactionForm}
+                    className="rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                  >
+                    Hủy sửa
+                  </button>
+                )}
               </div>
-              <form onSubmit={handleAddTransaction} className="space-y-5">
+              <form onSubmit={handleSaveTransaction} className="space-y-5">
                 <div>
                   <label className="text-sm text-slate-600">Tên giao dịch</label>
                   <input
@@ -490,9 +587,9 @@ export default function Dashboard() {
                       onChange={(e) => update("category", e.target.value)}
                       className="w-full mt-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
                     >
-                      {categories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
+                      {displayedCategoryOptions.map((category) => (
+                        <option key={category.id} value={category.name}>
+                          {category.name}
                         </option>
                       ))}
                     </select>
@@ -501,7 +598,16 @@ export default function Dashboard() {
                     <label className="text-sm text-slate-600">Loại</label>
                     <select
                       value={form.type}
-                      onChange={(e) => update("type", e.target.value)}
+                      onChange={(e) => {
+                        const nextType = e.target.value;
+                        update("type", nextType);
+                        update(
+                          "category",
+                          nextType === "expense"
+                            ? expenseCategories[0]?.name || defaultExpenseCategories[0]
+                            : incomeCategories[0]?.name || "Lương"
+                        );
+                      }}
                       className="w-full mt-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
                     >
                       <option value="expense">Chi tiêu</option>
@@ -532,8 +638,12 @@ export default function Dashboard() {
                   </div>
                 </div>
                 {error && <p className="text-sm text-red-500">{error}</p>}
-                <button className="w-full rounded-3xl bg-brand px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark">
-                  Thêm giao dịch
+                <button
+                  type="submit"
+                  disabled={savingTransaction}
+                  className="w-full rounded-3xl bg-brand px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingTransaction ? "Đang lưu..." : editingTransactionId ? "Lưu thay đổi" : "Thêm giao dịch"}
                 </button>
               </form>
             </section>
@@ -561,13 +671,30 @@ export default function Dashboard() {
                             {t.type === "income" ? "Thu nhập" : "Chi tiêu"} · {t.category} · {formatDate(t.date)}
                           </p>
                         </div>
-                        <div
-                          className={`rounded-2xl px-3 py-2 text-sm font-semibold ${
-                            t.amount < 0 ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
-                          }`}
-                        >
-                          {t.amount < 0 ? "-" : "+"}
-                          {formatVND(Math.abs(t.amount))}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <div
+                            className={`rounded-2xl px-3 py-2 text-sm font-semibold ${
+                              t.amount < 0 ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {t.amount < 0 ? "-" : "+"}
+                            {formatVND(Math.abs(t.amount))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => startEditingTransaction(t)}
+                            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand"
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTransaction(t)}
+                            disabled={savingTransaction}
+                            className="rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Xóa
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -705,6 +832,56 @@ export default function Dashboard() {
           </aside>
         </div>
       </main>
+      {pendingDeleteTransaction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingTransaction) {
+              setPendingDeleteTransaction(null);
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-transaction-title"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-xl text-rose-600">
+                !
+              </div>
+              <div>
+                <h2 id="delete-transaction-title" className="text-lg font-semibold text-slate-900">
+                  Xóa giao dịch?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Bạn có chắc muốn xóa giao dịch “{pendingDeleteTransaction.name}” không?
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={savingTransaction}
+                onClick={() => setPendingDeleteTransaction(null)}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={savingTransaction}
+                onClick={confirmDeleteTransaction}
+                className="rounded-2xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingTransaction ? "Đang xóa..." : "Xóa giao dịch"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

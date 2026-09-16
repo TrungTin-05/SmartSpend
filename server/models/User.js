@@ -22,6 +22,14 @@ const User = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    resetPasswordTokenHash: {
+      type: DataTypes.STRING(64),
+      allowNull: true,
+    },
+    resetPasswordExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     currency: {
       type: DataTypes.STRING,
       allowNull: false,

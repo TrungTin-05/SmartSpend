@@ -73,6 +73,10 @@ export default function Login() {
           </button>
         </form>
 
+        <Link to="/forgot-password" className="mt-4 block text-center text-sm font-medium text-brand hover:text-brand-dark">
+          Quên mật khẩu?
+        </Link>
+
         <p className="text-center text-sm text-gray-500 mt-6">
           Chưa có tài khoản? <Link to="/register" className="text-brand font-medium">
             Đăng ký ngay
