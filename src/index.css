@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand: #14b8a6;
+  --brand-dark: #0f766e;
+  --brand-soft: #dffaf5;
+  --brand-accent: #7c3aed;
+  --bg-primary: #f4f7fb;
+  --bg-secondary: #edf8ff;
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-strong: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: rgba(148, 163, 184, 0.22);
+  --shadow-soft: 0 20px 45px rgba(15, 23, 42, 0.08);
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -9,9 +24,28 @@ html {
 body {
   min-height: 100vh;
   margin: 0;
-  font-family: "Segoe UI", system-ui, sans-serif;
-  background: radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 22%), radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 25%), #f8fafc;
-  color: #0f172a;
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.16), transparent 22%),
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.14), transparent 22%),
+    linear-gradient(135deg, #f5f7ff 0%, #eefaf8 38%, #f8fafc 100%);
+  color: var(--text);
+}
+
+body.has-sidebar main {
+  margin-left: 5rem;
+  max-width: calc(100% - 5rem);
+}
+
+@media (min-width: 1024px) {
+  body.has-sidebar main {
+    margin-left: 16rem;
+    max-width: calc(100% - 16rem);
+  }
+}
+
+#root {
+  min-height: 100vh;
 }
 
 * {
@@ -25,6 +59,36 @@ textarea {
   font: inherit;
 }
 
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #64748b 50%),
+    linear-gradient(135deg, #64748b 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 2.5rem;
+  border-radius: 1.15rem;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+select:focus {
+  outline: none;
+}
+
+select option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
 ::selection {
-  background: rgba(34, 197, 94, 0.25);
+  background: rgba(20, 184, 166, 0.25);
+}
+
+.card-glass {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(16px);
 }

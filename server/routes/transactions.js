@@ -1,5 +1,6 @@
 import express from "express";
 import Transaction from "../models/Transaction.js";
+import Wallet from "../models/Wallet.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -26,10 +27,33 @@ function validateTransactionInput({ type, amount, category, name, date }) {
   return null;
 }
 
+async function resolveWallet(userId, walletId) {
+  if (walletId !== undefined && walletId !== null && walletId !== "") {
+    return Wallet.findOne({ where: { id: walletId, userId } });
+  }
+
+  const existingWallet = await Wallet.findOne({ where: { userId }, order: [["createdAt", "ASC"]] });
+  if (existingWallet) {
+    return existingWallet;
+  }
+
+  return Wallet.create({
+    userId,
+    name: "Tài khoản mặc định",
+    type: "other",
+    initialBalance: 0,
+  });
+}
+
+function walletResponse(transaction) {
+  return transaction.toJSON();
+}
+
 router.get("/", async (req, res, next) => {
   try {
     const transactions = await Transaction.findAll({
       where: { userId: req.user.id },
+      include: [{ model: Wallet, as: "wallet", attributes: ["id", "name", "type"] }],
       order: [["date", "DESC"], ["createdAt", "DESC"]],
     });
     res.json(transactions);
@@ -40,14 +64,20 @@ router.get("/", async (req, res, next) => {
 
 router.post("/", async (req, res, next) => {
   try {
-    const { type, amount, category, name, note, date } = req.body;
+    const { type, amount, category, name, note, date, walletId } = req.body;
     const validationError = validateTransactionInput(req.body);
     if (validationError) {
       return res.status(400).json({ message: validationError });
     }
 
+    const wallet = await resolveWallet(req.user.id, walletId);
+    if (!wallet) {
+      return res.status(400).json({ message: "Vui lòng chọn một ví hợp lệ." });
+    }
+
     const transaction = await Transaction.create({
       userId: req.user.id,
+      walletId: wallet.id,
       type,
       amount: type === "expense" ? -Math.abs(Number(amount)) : Math.abs(Number(amount)),
       category: category.trim(),
@@ -56,7 +86,8 @@ router.post("/", async (req, res, next) => {
       date,
     });
 
-    res.status(201).json(transaction);
+    await transaction.reload({ include: [{ model: Wallet, as: "wallet", attributes: ["id", "name", "type"] }] });
+    res.status(201).json(walletResponse(transaction));
   } catch (error) {
     next(error);
   }
@@ -76,8 +107,13 @@ router.put("/:id", async (req, res, next) => {
       return res.status(404).json({ message: "Không tìm thấy giao dịch." });
     }
 
-    const { type, amount, category, name, note, date } = req.body;
+    const { type, amount, category, name, note, date, walletId } = req.body;
+    const wallet = await resolveWallet(req.user.id, walletId ?? transaction.walletId);
+    if (!wallet) {
+      return res.status(400).json({ message: "Vui lòng chọn một ví hợp lệ." });
+    }
     await transaction.update({
+      walletId: wallet.id,
       type,
       amount: type === "expense" ? -Math.abs(Number(amount)) : Math.abs(Number(amount)),
       category: category.trim(),
@@ -86,7 +122,8 @@ router.put("/:id", async (req, res, next) => {
       date,
     });
 
-    res.json(transaction);
+    await transaction.reload({ include: [{ model: Wallet, as: "wallet", attributes: ["id", "name", "type"] }] });
+    res.json(walletResponse(transaction));
   } catch (error) {
     next(error);
   }

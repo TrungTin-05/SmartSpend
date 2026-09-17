@@ -1,43 +1,170 @@
-# SmartSpend – Demo Sprint 1
+# SmartSpend Demo
 
-Demo giao diện (~25-30%) cho báo cáo giữa kỳ: Splash → Login → Register → Dashboard,
-các mục Thu nhập / Chi tiêu / Hồ sơ hiển thị "Coming Soon" (chưa nối API thật).
+Dự án web quản lý chi tiêu cá nhân với giao diện React + backend Express + SQL Server.
 
-## Cách chạy (mở project này trong VS Code)
+## Mục tiêu
 
-1. Cài Node.js (bản LTS) nếu máy chưa có: https://nodejs.org
-2. Mở thư mục `smartspend-demo` trong VS Code.
-3. Mở Terminal trong VS Code (`Ctrl + ~`) và chạy:
-   ```
-   npm install
-   npm run dev
-   ```
-4. Mở trình duyệt tại địa chỉ hiện ra trong terminal (thường là `http://localhost:5173`).
+- Quản lý tài chính cá nhân
+- Đăng nhập / đăng ký người dùng
+- Quản lý ví, giao dịch, ngân sách, báo cáo
+- Giao diện React chạy trên port 5173, backend chạy trên port 5000
 
-## Cấu trúc project
+## Yêu cầu trước khi chạy
 
-```
+1. Cài đặt Node.js LTS: https://nodejs.org/
+2. Cài đặt SQL Server trên máy hoặc có sẵn SQL Server local
+3. Cài đặt Git Bash / PowerShell / VS Code terminal
+4. Kiểm tra file [server/.env](server/.env) để đảm bảo cấu hình database đúng với máy bạn
+
+## Cấu trúc thư mục
+
+```bash
 smartspend-demo/
-  src/
-    pages/
-      Splash.jsx      → màn hình chờ, tự chuyển sang Login sau ~2s
-      Login.jsx        → đăng nhập (demo, chưa nối API)
-      Register.jsx      → đăng ký (demo, chưa nối API)
-      Dashboard.jsx     → trang chủ, số dư, giao dịch gần đây (dữ liệu mẫu)
-      ComingSoon.jsx    → dùng chung cho Thu nhập / Chi tiêu / Hồ sơ
-    components/
-      BottomNav.jsx     → thanh điều hướng dưới cùng
-    App.jsx             → khai báo route
-    main.jsx            → điểm khởi chạy React
+├─ package.json               # frontend React + Vite
+├─ src/                      # source code frontend
+├─ server/
+│  ├─ package.json           # backend Node.js/Express
+│  ├─ server.js              # khởi chạy server
+│  ├─ .env                  # cấu hình DB và JWT
+│  ├─ config/
+│  ├─ models/
+│  ├─ routes/
+│  └─ migrations/
+├─ README.md
+└─ index.html
 ```
 
-## Việc cần làm tiếp (Sprint 2 trở đi)
+## Bước 1: Cài đặt dependencies
 
-- Nối API thật với Backend Node.js/Express + JWT (login/register).
-- Kết nối MongoDB để lưu giao dịch thật thay vì dữ liệu mẫu trong `Dashboard.jsx`.
-- Xây màn hình Thêm giao dịch, Quản lý danh mục thay cho "Coming Soon".
+Mở terminal tại thư mục gốc của project:
 
-## Lưu ý khi chụp ảnh demo cho báo cáo Word
+```bash
+cd smartspend-demo
+npm install
+```
 
-Chạy `npm run dev`, mở từng màn hình (Splash/Login/Register/Dashboard/Coming Soon)
-rồi chụp màn hình để chèn vào Chương 7 của báo cáo Word Sprint 1.
+Sau đó cài đặt backend:
+
+```bash
+cd server
+npm install
+```
+
+## Bước 2: Cấu hình database
+
+File [server/.env](server/.env) đang chứa cấu hình mẫu:
+
+```env
+DB_HOST=TRUNTIN\MSSQLSERVER1
+DB_INSTANCE=
+DB_PORT=
+DB_NAME=smartspend
+DB_AUTH_TYPE=sql
+DB_USER=sa
+DB_PASSWORD=123456
+JWT_SECRET=smartspend-secret
+FRONTEND_ORIGIN=http://localhost:5173
+```
+
+Nếu máy bạn dùng SQL Server khác, hãy sửa lại các giá trị này:
+
+- DB_HOST: tên máy hoặc hostname SQL Server
+- DB_NAME: tên database
+- DB_USER / DB_PASSWORD: tài khoản SQL Server
+- JWT_SECRET: secret key cho JWT
+
+Lưu ý: database `smartspend` phải tồn tại hoặc sẽ được ứng dụng tạo tự động nếu cấu hình đúng.
+
+## Bước 3: Khởi động backend
+
+Từ thư mục `server`:
+
+```bash
+cd smartspend-demo/server
+npm run dev
+```
+
+Hoặc chạy production mode:
+
+```bash
+npm start
+```
+
+Backend sẽ khởi chạy ở:
+
+```text
+http://localhost:5000
+```
+
+Nếu kết nối SQL Server thành công, server sẽ tự động sync model và tạo schema cần thiết.
+
+## Bước 4: Khởi động frontend
+
+Mở một terminal mới, ở thư mục gốc:
+
+```bash
+cd smartspend-demo
+npm run dev
+```
+
+Frontend sẽ mở ở địa chỉ thường là:
+
+```text
+http://localhost:5173
+```
+
+## Bước 5: Truy cập ứng dụng
+
+Mở browser và vào:
+
+```text
+http://localhost:5173
+```
+
+## Build production
+
+Để build phiên bản production của frontend:
+
+```bash
+cd smartspend-demo
+npm run build
+```
+
+Sau đó có thể preview:
+
+```bash
+npm run preview
+```
+
+## Troubleshooting
+
+### 1) Lỗi kết nối SQL Server
+
+- Kiểm tra SQL Server đang chạy
+- Kiểm tra `server/.env`
+- Đảm bảo user/password đúng
+- Nếu dùng SQL Server instance, kiểm tra `DB_HOST` và `DB_INSTANCE`
+
+### 2) Lỗi CORS
+
+Backend đã cấu hình `FRONTEND_ORIGIN=http://localhost:5173`. Nếu frontend chạy ở port khác, hãy cập nhật biến `FRONTEND_ORIGIN` trong [server/.env](server/.env).
+
+### 3) Lỗi package chưa cài đặt
+
+Chạy lại:
+
+```bash
+npm install
+cd server
+npm install
+```
+
+## Ghi chú
+
+- Frontend đang chạy bằng Vite
+- Backend đang chạy bằng Express + Sequelize + SQL Server
+- Mỗi khi chạy lại backend, ứng dụng sẽ tự kết nối tới DB và đồng bộ model
+
+## Tác giả
+
+SmartSpend Demo

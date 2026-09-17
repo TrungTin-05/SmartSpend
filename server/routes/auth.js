@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Wallet from "../models/Wallet.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "smartspend-secret";
@@ -16,6 +18,16 @@ function normalizeEmail(email) {
 
 function hashResetToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    currency: user.currency,
+    preferences: user.preferences,
+  };
 }
 
 router.post("/register", async (req, res, next) => {
@@ -37,6 +49,12 @@ router.post("/register", async (req, res, next) => {
       email: normalizedEmail,
       passwordHash,
       preferences: { theme: "light", startupPage: "/dashboard" },
+    });
+    await Wallet.create({
+      userId: user.id,
+      name: "Tài khoản mặc định",
+      type: "other",
+      initialBalance: 0,
     });
 
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
@@ -146,6 +164,49 @@ router.post("/reset-password", async (req, res, next) => {
     });
 
     res.json({ message: "Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/profile", authMiddleware, async (req, res, next) => {
+  try {
+    const updates = {};
+
+    if (req.body.name !== undefined) {
+      const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+      if (!name) {
+        return res.status(400).json({ message: "Họ tên không được để trống." });
+      }
+      updates.name = name;
+    }
+
+    if (req.body.email !== undefined) {
+      const email = normalizeEmail(req.body.email);
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ message: "Email không hợp lệ." });
+      }
+      const existingUser = await User.findOne({ where: { email } });
+      if (existingUser && existingUser.id !== req.user.id) {
+        return res.status(409).json({ message: "Email này đã được sử dụng." });
+      }
+      updates.email = email;
+    }
+
+    if (req.body.currency !== undefined) {
+      const currency = typeof req.body.currency === "string" ? req.body.currency.trim().toUpperCase() : "";
+      if (!currency || currency.length > 10) {
+        return res.status(400).json({ message: "Đơn vị tiền tệ không hợp lệ." });
+      }
+      updates.currency = currency;
+    }
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ message: "Vui lòng nhập thông tin cần cập nhật." });
+    }
+
+    await req.user.update(updates);
+    res.json({ user: publicUser(req.user) });
   } catch (error) {
     next(error);
   }

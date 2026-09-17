@@ -6,6 +6,8 @@ import {
   deleteTransaction,
   getCategories,
   getCurrentUser,
+  getTransactions,
+  getWallets,
   logout,
   updateTransaction,
 } from "../services/auth.js";
@@ -28,6 +30,7 @@ function formatDateRange(startDate, endDate) {
 }
 
 const defaultExpenseCategories = ["Ăn uống", "Di chuyển", "Giải trí", "Khác"];
+const ALL_WALLETS = "all";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -41,16 +44,24 @@ export default function Dashboard() {
     defaultExpenseCategories.map((name) => ({ id: name, name }))
   );
   const [incomeCategories, setIncomeCategories] = useState([{ id: "salary", name: "Lương" }]);
+  const [wallets, setWallets] = useState([]);
+  const [selectedWalletId, setSelectedWalletId] = useState(ALL_WALLETS);
   const [error, setError] = useState("");
   const [editingTransactionId, setEditingTransactionId] = useState(null);
   const [pendingDeleteTransaction, setPendingDeleteTransaction] = useState(null);
   const [savingTransaction, setSavingTransaction] = useState(false);
+  const [transactionSearch, setTransactionSearch] = useState("");
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState("all");
+  const [transactionCategoryFilter, setTransactionCategoryFilter] = useState("all");
+  const [transactionDateFrom, setTransactionDateFrom] = useState("");
+  const [transactionDateTo, setTransactionDateTo] = useState("");
   const [form, setForm] = useState({
     name: "",
     category: defaultExpenseCategories[0],
     amount: "",
     type: "expense",
     date: new Date().toISOString().slice(0, 10),
+    walletId: "",
   });
   const [selectedRange, setSelectedRange] = useState("last30Days");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -82,6 +93,58 @@ export default function Dashboard() {
     });
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    getWallets().then((result) => {
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+
+      const nextWallets = result.wallets || [];
+      setWallets(nextWallets);
+      const savedWalletId = localStorage.getItem(`smartspend-dashboard-wallet-${user.id}`);
+      const hasSavedWallet = nextWallets.some((wallet) => String(wallet.id) === savedWalletId);
+      setSelectedWalletId(hasSavedWallet ? savedWalletId : ALL_WALLETS);
+      setForm((current) => ({
+        ...current,
+        walletId: current.walletId || String(nextWallets[0]?.id || ""),
+      }));
+    });
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const selectedWalletExists = selectedWalletId === ALL_WALLETS
+      || wallets.some((wallet) => String(wallet.id) === selectedWalletId);
+    if (!selectedWalletExists) {
+      setSelectedWalletId(ALL_WALLETS);
+      localStorage.removeItem(`smartspend-dashboard-wallet-${user.id}`);
+    }
+  }, [wallets, selectedWalletId, user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let active = true;
+    getTransactions().then((result) => {
+      if (!active) return;
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+
+      const nextUser = { ...user, transactions: result.transactions || [] };
+      setUser(nextUser);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
   if (!user) {
     return null;
   }
@@ -91,10 +154,96 @@ export default function Dashboard() {
     ? categoryOptions
     : [{ id: form.category, name: form.category }, ...categoryOptions];
 
-  const balance = useMemo(
-    () => (user.transactions || []).reduce((sum, t) => sum + (t.amount || 0), 0),
-    [user.transactions]
+  const transactionCategoryOptions = useMemo(() => {
+    const categories = transactionTypeFilter === "expense"
+      ? expenseCategories
+      : transactionTypeFilter === "income"
+        ? incomeCategories
+        : [...expenseCategories, ...incomeCategories];
+    const uniqueCategories = new Map(categories.map((category) => [category.name, category]));
+    return Array.from(uniqueCategories.values());
+  }, [transactionTypeFilter, expenseCategories, incomeCategories]);
+
+  const selectedWallet = useMemo(
+    () => wallets.find((wallet) => String(wallet.id) === selectedWalletId) || null,
+    [wallets, selectedWalletId]
   );
+
+  const scopedTransactions = useMemo(
+    () => selectedWallet
+      ? (user.transactions || []).filter((transaction) => String(transaction.walletId) === String(selectedWallet.id))
+      : user.transactions || [],
+    [selectedWallet, user.transactions]
+  );
+
+  const transactionDateFilterError = transactionDateFrom && transactionDateTo && transactionDateFrom > transactionDateTo
+    ? "Ngày bắt đầu không được sau ngày kết thúc."
+    : "";
+
+  const filteredTransactions = useMemo(() => {
+    const normalizedSearch = transactionSearch.trim().toLocaleLowerCase();
+    if (transactionDateFilterError) {
+      return [];
+    }
+
+    return scopedTransactions.filter((transaction) => {
+      const matchesSearch = !normalizedSearch || transaction.name.toLocaleLowerCase().includes(normalizedSearch);
+      const matchesType = transactionTypeFilter === "all" || transaction.type === transactionTypeFilter;
+      const matchesCategory = transactionCategoryFilter === "all" || transaction.category === transactionCategoryFilter;
+      const matchesDateFrom = !transactionDateFrom || transaction.date >= transactionDateFrom;
+      const matchesDateTo = !transactionDateTo || transaction.date <= transactionDateTo;
+      return matchesSearch && matchesType && matchesCategory && matchesDateFrom && matchesDateTo;
+    });
+  }, [
+    scopedTransactions,
+    transactionSearch,
+    transactionTypeFilter,
+    transactionCategoryFilter,
+    transactionDateFrom,
+    transactionDateTo,
+    transactionDateFilterError,
+  ]);
+
+  function clearTransactionFilters() {
+    setTransactionSearch("");
+    setTransactionTypeFilter("all");
+    setTransactionCategoryFilter("all");
+    setTransactionDateFrom("");
+    setTransactionDateTo("");
+  }
+
+  const totalWalletBalance = useMemo(
+    () => (wallets || []).reduce((sum, wallet) => sum + Number(wallet.balance || 0), 0),
+    [wallets]
+  );
+
+  const totalWalletIncome = useMemo(
+    () => (wallets || []).reduce((sum, wallet) => sum + Number(wallet.incomeTotal || 0), 0),
+    [wallets]
+  );
+
+  const totalWalletExpense = useMemo(
+    () => (wallets || []).reduce((sum, wallet) => sum + Number(wallet.expenseTotal || 0), 0),
+    [wallets]
+  );
+
+  const selectedWalletTotals = useMemo(() => {
+    if (!selectedWallet) {
+      return {
+        balance: totalWalletBalance,
+        income: totalWalletIncome,
+        expense: totalWalletExpense,
+      };
+    }
+
+    return {
+      balance: Number(selectedWallet.balance || 0),
+      income: Number(selectedWallet.incomeTotal || 0),
+      expense: Number(selectedWallet.expenseTotal || 0),
+    };
+  }, [selectedWallet, totalWalletBalance, totalWalletIncome, totalWalletExpense]);
+
+  const balance = selectedWalletTotals.balance;
 
   const today = useMemo(() => {
     const now = new Date();
@@ -197,14 +346,14 @@ export default function Dashboard() {
 
   const yearOptions = useMemo(() => {
     const years = new Set([today.getFullYear()]);
-    (user.transactions || []).forEach((t) => {
+    scopedTransactions.forEach((t) => {
       const parsed = new Date(t.date);
       if (!Number.isNaN(parsed.getFullYear())) {
         years.add(parsed.getFullYear());
       }
     });
     return Array.from(years).sort((a, b) => b - a);
-  }, [user.transactions, today]);
+  }, [scopedTransactions, today]);
 
   const startOfSelectedYear = useMemo(() => {
     const date = new Date(selectedYear, 0, 1);
@@ -287,7 +436,7 @@ export default function Dashboard() {
   );
 
   const selectedSummary = useMemo(() => {
-    const selectedTransactions = (user.transactions || []).filter((transaction) => {
+    const selectedTransactions = scopedTransactions.filter((transaction) => {
       return selectedRangeConfig.filter(transaction.date);
     });
 
@@ -324,75 +473,75 @@ export default function Dashboard() {
       topExpense,
       topIncome,
     };
-  }, [selectedRangeConfig, selectedYear, user.transactions]);
+  }, [selectedRangeConfig, selectedYear, scopedTransactions]);
 
   const sortedTransactions = useMemo(
-    () => [...(user.transactions || [])].sort((a, b) => new Date(b.date) - new Date(a.date)),
-    [user.transactions]
+    () => [...scopedTransactions].sort((a, b) => new Date(b.date) - new Date(a.date)),
+    [scopedTransactions]
   );
 
   const dailyIncome = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount > 0 && sameDay(t.date))
         .reduce((sum, t) => sum + t.amount, 0),
-    [user.transactions, sameDay]
+    [scopedTransactions, sameDay]
   );
 
   const dailyExpense = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount < 0 && sameDay(t.date))
         .reduce((sum, t) => sum + Math.abs(t.amount), 0),
-    [user.transactions, sameDay]
+    [scopedTransactions, sameDay]
   );
 
   const weeklyIncome = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount > 0 && inLast7Days(t.date))
         .reduce((sum, t) => sum + t.amount, 0),
-    [user.transactions, inLast7Days]
+    [scopedTransactions, inLast7Days]
   );
 
   const weeklyExpense = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount < 0 && inLast7Days(t.date))
         .reduce((sum, t) => sum + Math.abs(t.amount), 0),
-    [user.transactions, inLast7Days]
+    [scopedTransactions, inLast7Days]
   );
 
   const monthlyIncome = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount > 0 && inLast30Days(t.date))
         .reduce((sum, t) => sum + t.amount, 0),
-    [user.transactions, inLast30Days]
+    [scopedTransactions, inLast30Days]
   );
 
   const monthlyExpense = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount < 0 && inLast30Days(t.date))
         .reduce((sum, t) => sum + Math.abs(t.amount), 0),
-    [user.transactions, inLast30Days]
+    [scopedTransactions, inLast30Days]
   );
 
   const yearIncome = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount > 0 && inSelectedYear(t.date))
         .reduce((sum, t) => sum + t.amount, 0),
-    [user.transactions, inSelectedYear]
+    [scopedTransactions, inSelectedYear]
   );
 
   const yearExpense = useMemo(
     () =>
-      (user.transactions || [])
+      scopedTransactions
         .filter((t) => t.amount < 0 && inSelectedYear(t.date))
         .reduce((sum, t) => sum + Math.abs(t.amount), 0),
-    [user.transactions, inSelectedYear]
+    [scopedTransactions, inSelectedYear]
   );
 
   const dailyNet = dailyIncome - dailyExpense;
@@ -404,7 +553,7 @@ export default function Dashboard() {
     const expenseTotals = {};
     const incomeTotals = {};
 
-    (user.transactions || []).forEach((t) => {
+    scopedTransactions.forEach((t) => {
       if (t.type === "expense") {
         expenseTotals[t.category] = (expenseTotals[t.category] || 0) + Math.abs(t.amount);
       } else if (t.type === "income") {
@@ -422,12 +571,22 @@ export default function Dashboard() {
       topExpense: findTop(expenseTotals) || "Chưa có",
       topIncome: findTop(incomeTotals) || "Chưa có",
     };
-  }, [user.transactions]);
+  }, [scopedTransactions]);
 
   const smartMessage = monthlyNet >= 0 ? "Bạn đang kiểm soát chi tiêu tốt." : "Cảnh báo: chi tiêu đang vượt thu nhập.";
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleWalletChange(event) {
+    const nextWalletId = event.target.value;
+    setSelectedWalletId(nextWalletId);
+    if (nextWalletId === ALL_WALLETS) {
+      localStorage.removeItem(`smartspend-dashboard-wallet-${user.id}`);
+    } else {
+      localStorage.setItem(`smartspend-dashboard-wallet-${user.id}`, nextWalletId);
+    }
   }
 
   function resetTransactionForm() {
@@ -438,6 +597,7 @@ export default function Dashboard() {
       amount: "",
       type: "expense",
       date: new Date().toISOString().slice(0, 10),
+      walletId: String(wallets[0]?.id || ""),
     });
   }
 
@@ -449,6 +609,7 @@ export default function Dashboard() {
       amount: Math.abs(transaction.amount),
       type: transaction.type,
       date: transaction.date,
+      walletId: String(transaction.walletId || wallets[0]?.id || ""),
     });
     setError("");
   }
@@ -465,9 +626,10 @@ export default function Dashboard() {
       type: form.type,
       name: form.name.trim(),
       category: form.category,
-      amount: form.type === "expense" ? -Math.abs(amount) : Math.abs(amount),
+      amount: Math.abs(amount),
       note: "",
       date: form.date,
+      walletId: form.walletId || undefined,
     };
 
     setSavingTransaction(true);
@@ -485,6 +647,10 @@ export default function Dashboard() {
     }
 
     setUser(result.user);
+    const walletResult = await getWallets();
+    if (!walletResult.error) {
+      setWallets(walletResult.wallets || []);
+    }
     setError("");
     resetTransactionForm();
   }
@@ -512,6 +678,10 @@ export default function Dashboard() {
     }
 
     setUser(result.user);
+    const walletResult = await getWallets();
+    if (!walletResult.error) {
+      setWallets(walletResult.wallets || []);
+    }
     setError("");
     if (editingTransactionId === pendingDeleteTransaction.id) {
       resetTransactionForm();
@@ -533,7 +703,22 @@ export default function Dashboard() {
               </div>
 
               <div className="mt-10 rounded-[28px] bg-white/10 p-8">
-                <p className="text-sm text-white/80">Tổng số dư</p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-white/80">Số dư</p>
+                  <select
+                    aria-label="Chọn ví"
+                    value={selectedWalletId}
+                    onChange={handleWalletChange}
+                    className="rounded-2xl border border-white/20 bg-white/15 px-4 py-2 text-sm font-medium text-white outline-none transition focus:border-white focus:ring-2 focus:ring-white/30 [&>option]:text-slate-900"
+                  >
+                    <option value={ALL_WALLETS}>Tất cả các ví</option>
+                    {wallets.map((wallet) => (
+                      <option key={wallet.id} value={wallet.id}>
+                        {wallet.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <p className="mt-4 text-5xl font-bold">{formatVND(balance)}</p>
               </div>
             </header>
@@ -542,14 +727,31 @@ export default function Dashboard() {
               <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm text-slate-500">Thu nhập</p>
-                  <p className="mt-2 text-3xl font-semibold text-green-600">{formatVND(monthlyIncome)}</p>
+                  <p className="mt-2 text-3xl font-semibold text-green-600">{formatVND(selectedWalletTotals.income)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-slate-500">Chi tiêu</p>
-                  <p className="mt-2 text-3xl font-semibold text-red-500">{formatVND(monthlyExpense)}</p>
+                  <p className="mt-2 text-3xl font-semibold text-red-500">{formatVND(selectedWalletTotals.expense)}</p>
                 </div>
               </div>
             </div>
+
+            {wallets.length > 0 && (
+              <section className="rounded-[32px] bg-white p-8 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-900">Số dư theo ví</h2>
+                <div className="mt-5 space-y-3">
+                  {wallets.map((wallet) => (
+                    <div key={wallet.id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                      <div>
+                        <p className="font-medium text-slate-800">{wallet.name}</p>
+                        <p className="text-xs text-slate-500">Thu: {formatVND(wallet.incomeTotal || 0)} · Chi: {formatVND(wallet.expenseTotal || 0)}</p>
+                      </div>
+                      <p className="text-lg font-semibold text-slate-900">{formatVND(wallet.balance || 0)}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="rounded-[32px] bg-white p-8 shadow-sm">
               <div className="mb-6 flex items-center justify-between">
@@ -579,7 +781,7 @@ export default function Dashboard() {
                     className="w-full mt-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
                   />
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   <div>
                     <label className="text-sm text-slate-600">Danh mục</label>
                     <select
@@ -612,6 +814,25 @@ export default function Dashboard() {
                     >
                       <option value="expense">Chi tiêu</option>
                       <option value="income">Thu nhập</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm text-slate-600">Ví</label>
+                    <select
+                      value={form.walletId}
+                      onChange={(e) => update("walletId", e.target.value)}
+                      disabled={wallets.length === 0}
+                      className="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {wallets.length === 0 ? (
+                        <option value="">Chưa có ví</option>
+                      ) : (
+                        wallets.map((wallet) => (
+                          <option key={wallet.id} value={wallet.id}>
+                            {wallet.name}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
                 </div>
@@ -653,13 +874,88 @@ export default function Dashboard() {
                 <h2 className="text-xl font-semibold text-slate-900">Giao dịch gần đây</h2>
                 <p className="text-sm text-slate-500">Xem lại lịch sử chi tiêu và thu nhập.</p>
               </div>
+              <div className="mb-6 grid gap-4 rounded-3xl border border-slate-100 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="md:col-span-2 xl:col-span-3">
+                  <label className="text-sm text-slate-600">Tìm theo tên giao dịch</label>
+                  <input
+                    value={transactionSearch}
+                    onChange={(e) => setTransactionSearch(e.target.value)}
+                    placeholder="Ví dụ: Ăn sáng"
+                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-slate-600">Loại giao dịch</label>
+                  <select
+                    value={transactionTypeFilter}
+                    onChange={(e) => {
+                      setTransactionTypeFilter(e.target.value);
+                      setTransactionCategoryFilter("all");
+                    }}
+                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  >
+                    <option value="all">Tất cả</option>
+                    <option value="income">Thu nhập</option>
+                    <option value="expense">Chi tiêu</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-slate-600">Danh mục</label>
+                  <select
+                    value={transactionCategoryFilter}
+                    onChange={(e) => setTransactionCategoryFilter(e.target.value)}
+                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  >
+                    <option value="all">Tất cả</option>
+                    {transactionCategoryOptions.map((category) => (
+                      <option key={category.id} value={category.name}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-slate-600">Từ ngày</label>
+                  <input
+                    type="date"
+                    value={transactionDateFrom}
+                    onChange={(e) => setTransactionDateFrom(e.target.value)}
+                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-slate-600">Đến ngày</label>
+                  <input
+                    type="date"
+                    value={transactionDateTo}
+                    onChange={(e) => setTransactionDateTo(e.target.value)}
+                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={clearTransactionFilters}
+                    className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand"
+                  >
+                    Xóa bộ lọc
+                  </button>
+                </div>
+                {transactionDateFilterError && (
+                  <p className="text-sm text-red-500 md:col-span-2 xl:col-span-3">{transactionDateFilterError}</p>
+                )}
+              </div>
               <div className="space-y-4">
-                {user.transactions.length === 0 ? (
+                {scopedTransactions.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-                    Chưa có giao dịch nào. Hãy thêm giao dịch đầu tiên.
+                    {selectedWallet ? "Ví này chưa có giao dịch nào." : "Chưa có giao dịch nào. Hãy thêm giao dịch đầu tiên."}
+                  </div>
+                ) : filteredTransactions.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+                    Không tìm thấy giao dịch phù hợp.
                   </div>
                 ) : (
-                  user.transactions.map((t) => (
+                  filteredTransactions.map((t) => (
                     <div
                       key={t.id}
                       className="rounded-3xl border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm"
@@ -668,7 +964,7 @@ export default function Dashboard() {
                         <div>
                           <p className="font-semibold text-sm text-slate-900">{t.name}</p>
                           <p className="mt-1 text-xs text-slate-500">
-                            {t.type === "income" ? "Thu nhập" : "Chi tiêu"} · {t.category} · {formatDate(t.date)}
+                            {t.type === "income" ? "Thu nhập" : "Chi tiêu"} · {t.category} · {t.wallet?.name || "Chưa gán ví"} · {formatDate(t.date)}
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-2">

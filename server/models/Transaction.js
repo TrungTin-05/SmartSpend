@@ -1,6 +1,7 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/db.js";
 import User from "./User.js";
+import Wallet from "./Wallet.js";
 
 const Transaction = sequelize.define(
   "Transaction",
@@ -13,6 +14,10 @@ const Transaction = sequelize.define(
     userId: {
       type: DataTypes.INTEGER,
       allowNull: false,
+    },
+    walletId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
     type: {
       type: DataTypes.ENUM("income", "expense"),
@@ -47,5 +52,7 @@ const Transaction = sequelize.define(
 
 Transaction.belongsTo(User, { foreignKey: "userId" });
 User.hasMany(Transaction, { foreignKey: "userId" });
+Transaction.belongsTo(Wallet, { foreignKey: "walletId", as: "wallet" });
+Wallet.hasMany(Transaction, { foreignKey: "walletId", as: "transactions" });
 
 export default Transaction;

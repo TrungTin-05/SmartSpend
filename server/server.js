@@ -4,9 +4,17 @@ import dotenv from "dotenv";
 dotenv.config({ override: true });
 import connectDB from "./config/db.js";
 import "./models/Category.js";
+import "./models/Wallet.js";
+import "./models/Transaction.js";
+import "./models/Budget.js";
+import "./models/MonthlyBudget.js";
 import authRoutes from "./routes/auth.js";
 import categoryRoutes from "./routes/categories.js";
 import transactionRoutes from "./routes/transactions.js";
+import walletRoutes from "./routes/wallets.js";
+import budgetRoutes from "./routes/budgets.js";
+import monthlyBudgetRoutes from "./routes/monthlyBudgets.js";
+import reportRoutes from "./routes/reports.js";
 
 const app = express();
 connectDB();
@@ -15,6 +23,8 @@ const allowedOrigins = new Set([
   process.env.FRONTEND_ORIGIN || "http://localhost:5173",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
 ]);
 
 app.use(
@@ -34,6 +44,10 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/transactions", transactionRoutes);
+app.use("/api/wallets", walletRoutes);
+app.use("/api/budgets", budgetRoutes);
+app.use("/api/monthly-budgets", monthlyBudgetRoutes);
+app.use("/api/reports", reportRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
